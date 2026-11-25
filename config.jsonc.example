@@ -1,0 +1,22 @@
+{
+  // Watched chats: usernames (without @) or numeric IDs (e.g., -1001234567890)
+  "source_chats": [
+    "chat1",
+    "chat2",
+    -123456
+  ],
+
+  // Destination chat for alerts/commands (private group/channel ID, or null to print to CLI only)
+  "alert_chat_id": -654321,
+
+  // Keywords to monitor, mapped to optional per-keyword exclusion lists
+  "include_keywords": {
+    "gaming laptop": ["rtx 3050"],
+    "7800x3d": []
+  },
+
+  // Global exclusion keywords (rejects the message if any match)
+  "exclude_keywords": [
+    "sold out"
+  ]
+}
