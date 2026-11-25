@@ -22,7 +22,9 @@ A lightweight [Telethon](https://docs.telethon.dev/) userbot that monitors Teleg
    TG_API_ID=123456
    TG_API_HASH=your_api_hash
    TG_SESSION_NAME=telegram_alert_session
+   TG_BOT_TOKEN=your_bot_token_here
    ```
+   (`TG_BOT_TOKEN` is optional but recommended so alerts are sent by a separate bot and trigger push notifications. Make sure to add the bot to your `alert_chat_id` group or start a DM with it.)
 
 3. **Create `config.jsonc`:**
    Copy `config.jsonc.example` to `config.jsonc` and edit your watched chats, destination `alert_chat_id`, and keywords.

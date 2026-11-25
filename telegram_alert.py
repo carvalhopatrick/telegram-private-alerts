@@ -11,6 +11,7 @@ load_dotenv()
 API_ID = int(os.environ["TG_API_ID"])
 API_HASH = os.environ["TG_API_HASH"]
 SESSION_NAME = os.environ["TG_SESSION_NAME"]
+BOT_TOKEN = os.environ.get("TG_BOT_TOKEN")
 
 def strip_jsonc_comments(text: str) -> str:
     pattern = re.compile(r'"(?:\\.|[^"\\])*"|//[^\n]*|/\*[\s\S]*?\*/')
@@ -95,6 +96,7 @@ def matches_filters(raw_text: str) -> tuple[bool, list[str]]:
 
 
 client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
+bot_client = TelegramClient(f"{SESSION_NAME}_bot", API_ID, API_HASH) if BOT_TOKEN else None
 
 
 def get_message_link(event: events.NewMessage.Event, chat) -> str | None:
@@ -328,7 +330,8 @@ async def on_new_message(event: events.NewMessage.Event) -> None:
     print(alert_msg + "\n" + "-" * 40)
 
     if ALERT_CHAT_ID:
-        await client.send_message(ALERT_CHAT_ID, alert_msg, link_preview=False)
+        sender = bot_client or client
+        await sender.send_message(ALERT_CHAT_ID, alert_msg, link_preview=False)
 
 
 def register_source_handler() -> None:
@@ -348,12 +351,29 @@ async def on_command(event: events.NewMessage.Event) -> None:
 
 
 async def main() -> None:
-    async with client:
-        register_source_handler()
-        if ALERT_CHAT_ID:
-            client.add_event_handler(on_command, events.NewMessage(chats=[ALERT_CHAT_ID]))
-        print("Promo monitor running...")
-        await client.run_until_disconnected()
+    await client.start()
+    register_source_handler()
+    command_client = bot_client or client
+
+    if bot_client:
+        await bot_client.start(bot_token=BOT_TOKEN)
+
+    if ALERT_CHAT_ID:
+        command_client.add_event_handler(on_command, events.NewMessage(chats=[ALERT_CHAT_ID]))
+
+    print("Promo monitor running...")
+    try:
+        if bot_client:
+            await asyncio.gather(
+                client.run_until_disconnected(),
+                bot_client.run_until_disconnected(),
+            )
+        else:
+            await client.run_until_disconnected()
+    finally:
+        if bot_client:
+            await bot_client.disconnect()
+        await client.disconnect()
 
 
 if __name__ == "__main__":
