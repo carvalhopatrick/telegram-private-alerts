@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import re
@@ -347,13 +348,13 @@ async def on_command(event: events.NewMessage.Event) -> None:
 
 
 async def main() -> None:
-    await client.start()
-    register_source_handler()
-    if ALERT_CHAT_ID:
-        client.add_event_handler(on_command, events.NewMessage(chats=[ALERT_CHAT_ID]))
-    print("Promo monitor running...")
-    await client.run_until_disconnected()
+    async with client:
+        register_source_handler()
+        if ALERT_CHAT_ID:
+            client.add_event_handler(on_command, events.NewMessage(chats=[ALERT_CHAT_ID]))
+        print("Promo monitor running...")
+        await client.run_until_disconnected()
 
 
 if __name__ == "__main__":
-    client.loop.run_until_complete(main())
+    asyncio.run(main())

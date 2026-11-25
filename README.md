@@ -13,7 +13,7 @@ A lightweight [Telethon](https://docs.telethon.dev/) userbot that monitors Teleg
 
 1. **Install dependencies:**
    ```bash
-   pip install telethon python-dotenv
+   pip install -r requirements.txt
    ```
 
 2. **Configure environment variables:**
