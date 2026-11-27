@@ -12,6 +12,7 @@ from historical_alarm import (
     DEFAULT_HISTORICAL_CONFIG,
     HistoricalAlarmEngine,
     HistoryStore,
+    extract_primary_price,
     sync_history,
 )
 
@@ -715,8 +716,10 @@ async def on_new_message(event: events.NewMessage.Event) -> None:
     source_line = f"{chat_title} ({msg_link})" if msg_link else chat_title
 
     if ok:
+        price = extract_primary_price(text)
+        price_str = f" {format_price(price)}" if price is not None else ""
         alert_msg = (
-            f"**PROMO MATCH:**\n {', '.join(matched)}\n\n"
+            f"**PM**: {', '.join(matched)}{price_str}\n\n"
             f"**SOURCE:**\n {source_line}\n\n"
             f"**TEXT:**\n {snippet}\n\n"
             f"**LINKS:**\n{links_block}"
