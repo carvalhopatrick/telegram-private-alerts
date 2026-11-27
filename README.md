@@ -4,7 +4,7 @@ A lightweight [Telethon](https://docs.telethon.dev/) userbot that monitors Teleg
 
 ## Features
 
-- **Flexible keyword matching:** Case-insensitive, diacritic-insensitive, and order-independent token matching (e.g. `"monitor oled"` matches `"Monitor Samsung OLED"`, and `"eletrica"` matches `"elétrica"`).
+- **Flexible keyword matching:** Case-insensitive, diacritic-insensitive, and order-independent token matching (e.g. `"monitor oled"` matches `"Monitor Samsung OLED"`, and `"eletrica"` matches `"elétrica"`). Supports `*` (or `*:label`) wildcards to match any message when combined with channel/price/exclusion rules.
 - **Two-level exclusions:** Global `exclude_keywords` plus optional per-keyword exclusion lists.
 - **Rich alert formatting:** Includes matched keywords, source chat title, direct link to the original message (`t.me/...`), message snippet, and extracted URLs.
 - **Live config via Telegram:** Manage keywords, exclusions, and watched chats directly from your alert chat using slash commands—changes persist to `config.jsonc`.

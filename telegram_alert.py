@@ -190,7 +190,13 @@ def channel_matches_rule(
     return False
 
 
+def is_wildcard_keyword(keyword: str) -> bool:
+    return keyword.strip().startswith("*")
+
+
 def keyword_matches(keyword: str, norm_text: str) -> bool:
+    if is_wildcard_keyword(keyword):
+        return bool(norm_text)
     tokens = normalize_for_matching(keyword).split()
     return bool(tokens) and all(token in norm_text for token in tokens)
 
@@ -580,7 +586,10 @@ def handle_command(raw_text: str, sender_username: str | None = None) -> tuple[s
         }
         INCLUDE_KEYWORDS[keyword] = serialize_keyword_rule(rule)
         save_config()
-        return f"Added {format_keyword_rule(keyword, INCLUDE_KEYWORDS[keyword])[2:]}", False, False
+        msg = f"Added {format_keyword_rule(keyword, INCLUDE_KEYWORDS[keyword])[2:]}"
+        if is_wildcard_keyword(keyword) and not channels:
+            msg += "\nNote: no channel filter set — this wildcard will match all watched chats."
+        return msg, False, False
 
     if cmd == "/add_exclusion":
         excl = normalize_text(arg)
