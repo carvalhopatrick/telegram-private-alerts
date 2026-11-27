@@ -9,10 +9,20 @@
   // Destination chat for alerts/commands (private group/channel ID, or null to print to CLI only)
   "alert_chat_id": -654321,
 
-  // Keywords to monitor, mapped to optional per-keyword exclusion lists
+  // Keywords to monitor, mapped to filter rules (excludes, optional exclusive channels, and R$ price bounds)
   "include_keywords": {
-    "gaming laptop": ["rtx 3050"],
-    "7800x3d": []
+    "gaming laptop": {
+      "excludes": ["rtx 3050"],
+      "channels": ["chat1"],
+      "min_price": 2500.0,
+      "max_price": 6000.0
+    },
+    "7800x3d": {
+      "excludes": [],
+      "channels": [],
+      "min_price": null,
+      "max_price": null
+    }
   },
 
   // Global exclusion keywords (rejects the message if any match)

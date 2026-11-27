@@ -45,7 +45,7 @@ Send these commands in your configured `alert_chat_id`:
 | Command | Description |
 | --- | --- |
 | `/list` | List watched chats, keywords, and exclusions |
-| `/add <keyword> -<excl1> -<excl2>` | Add a keyword with optional `-`-prefixed exclusions |
+| `/add <keyword> -<excl> ch:<chat> min:<price> max:<price>` | Add/update keyword with optional exclusions, channel filter, and `R$` price bounds |
 | `/add_exclusion <keyword>` | Add a global exclusion |
 | `/remove <keyword>` | Remove a keyword |
 | `/remove_exclusion <keyword>` | Remove a global exclusion |

@@ -28,11 +28,12 @@ SOURCE_CHATS: list[str | int] = _config.get("source_chats", [])
 # Destination chat for alerts (private group/channel ID, or None to print only)
 ALERT_CHAT_ID: int | None = _config.get("alert_chat_id")
 
-INCLUDE_KEYWORDS: dict[str, list[str]] = _config.get("include_keywords", {})
+INCLUDE_KEYWORDS: dict[str, list[str] | dict] = _config.get("include_keywords", {})
 
 EXCLUDE_KEYWORDS: list[str] = _config.get("exclude_keywords", [])
 
 URL_PATTERN = re.compile(r"https?://[^\s<>\"')\]]+", re.IGNORECASE)
+PRICE_PATTERN = re.compile(r"r\$\s*(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d{1,2}))?", re.IGNORECASE)
 
 
 def save_config() -> None:
@@ -74,12 +75,90 @@ def extract_urls(event: events.NewMessage.Event) -> list[str]:
     return list(urls)
 
 
+def parse_keyword_rule(rule: list[str] | dict) -> dict:
+    if isinstance(rule, list):
+        return {
+            "excludes": list(rule),
+            "channels": [],
+            "min_price": None,
+            "max_price": None,
+        }
+    return {
+        "excludes": list(rule.get("excludes", [])),
+        "channels": list(rule.get("channels", [])),
+        "min_price": rule.get("min_price"),
+        "max_price": rule.get("max_price"),
+    }
+
+
+def serialize_keyword_rule(rule: dict) -> list[str] | dict:
+    excludes = rule.get("excludes", [])
+    channels = rule.get("channels", [])
+    min_price = rule.get("min_price")
+    max_price = rule.get("max_price")
+    if not channels and min_price is None and max_price is None:
+        return excludes
+    data: dict = {}
+    if excludes:
+        data["excludes"] = excludes
+    if channels:
+        data["channels"] = channels
+    if min_price is not None:
+        data["min_price"] = min_price
+    if max_price is not None:
+        data["max_price"] = max_price
+    return data
+
+
+def extract_prices(raw_text: str) -> list[float]:
+    prices: list[float] = []
+    for int_part, dec_part in PRICE_PATTERN.findall(raw_text):
+        cleaned_int = int_part.replace(".", "")
+        num_str = f"{cleaned_int}.{dec_part}" if dec_part else cleaned_int
+        try:
+            prices.append(float(num_str))
+        except ValueError:
+            continue
+    return prices
+
+
+def price_matches_rule(prices: list[float], min_price: float | None, max_price: float | None) -> bool:
+    if min_price is None and max_price is None:
+        return True
+    if not prices:
+        return True
+    return any(
+        (min_price is None or p >= min_price) and (max_price is None or p <= max_price)
+        for p in prices
+    )
+
+
+def channel_matches_rule(
+    channels: list[str | int],
+    chat_id: int | None,
+    chat_usernames: list[str] | None,
+) -> bool:
+    if not channels:
+        return True
+    usernames_lower = {u.lstrip("@").lower() for u in (chat_usernames or []) if u}
+    for ch in channels:
+        if isinstance(ch, int) and chat_id is not None and chat_id == ch:
+            return True
+        if isinstance(ch, str) and ch.lstrip("@").lower() in usernames_lower:
+            return True
+    return False
+
+
 def keyword_matches(keyword: str, norm_text: str) -> bool:
     tokens = normalize_for_matching(keyword).split()
     return bool(tokens) and all(token in norm_text for token in tokens)
 
 
-def matches_filters(raw_text: str) -> tuple[bool, list[str]]:
+def matches_filters(
+    raw_text: str,
+    chat_id: int | None = None,
+    chat_usernames: list[str] | None = None,
+) -> tuple[bool, list[str]]:
     if not raw_text:
         return False, []
     norm = normalize_for_matching(raw_text)
@@ -87,11 +166,22 @@ def matches_filters(raw_text: str) -> tuple[bool, list[str]]:
     if any(normalize_for_matching(bad) in norm for bad in EXCLUDE_KEYWORDS):
         return False, []
 
-    matched = [
-        kw
-        for kw, excludes in INCLUDE_KEYWORDS.items()
-        if keyword_matches(kw, norm) and not any(normalize_for_matching(bad) in norm for bad in excludes)
-    ]
+    prices: list[float] | None = None
+    matched: list[str] = []
+    for kw, raw_rule in INCLUDE_KEYWORDS.items():
+        rule = parse_keyword_rule(raw_rule)
+        if not channel_matches_rule(rule["channels"], chat_id, chat_usernames):
+            continue
+        if not keyword_matches(kw, norm):
+            continue
+        if any(normalize_for_matching(bad) in norm for bad in rule["excludes"]):
+            continue
+        if rule["min_price"] is not None or rule["max_price"] is not None:
+            if prices is None:
+                prices = extract_prices(raw_text)
+            if not price_matches_rule(prices, rule["min_price"], rule["max_price"]):
+                continue
+        matched.append(kw)
     return (len(matched) > 0), matched
 
 
@@ -148,6 +238,31 @@ def find_chat_entry(chats: list[str | int], target: str | int) -> str | int | No
     return None
 
 
+def format_price(value: float) -> str:
+    return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def format_keyword_rule(kw: str, raw_rule: list[str] | dict) -> str:
+    rule = parse_keyword_rule(raw_rule)
+    details: list[str] = []
+    if rule["excludes"]:
+        excl_str = ", ".join(f"`{e}`" for e in rule["excludes"])
+        details.append(f"excludes: {excl_str}")
+    if rule["channels"]:
+        ch_str = ", ".join(f"`{c}`" for c in rule["channels"])
+        details.append(f"channels: {ch_str}")
+    if rule["min_price"] is not None or rule["max_price"] is not None:
+        if rule["min_price"] is not None and rule["max_price"] is not None:
+            details.append(f"price: `{format_price(rule['min_price'])}` - `{format_price(rule['max_price'])}`")
+        elif rule["min_price"] is not None:
+            details.append(f"min: `{format_price(rule['min_price'])}`")
+        else:
+            details.append(f"max: `{format_price(rule['max_price'])}`")
+    if details:
+        return f"- `{kw}` ({' | '.join(details)})"
+    return f"- `{kw}`"
+
+
 def format_config_list() -> str:
     if SOURCE_CHATS:
         chats_lines = "\n".join(f"- `{c}`" for c in SOURCE_CHATS)
@@ -155,14 +270,10 @@ def format_config_list() -> str:
         chats_lines = "- (none)"
 
     if INCLUDE_KEYWORDS:
-        kw_lines = []
-        for kw, excludes in INCLUDE_KEYWORDS.items():
-            if excludes:
-                excl_str = ", ".join(f"`{e}`" for e in excludes)
-                kw_lines.append(f"- `{kw}` (excludes: {excl_str})")
-            else:
-                kw_lines.append(f"- `{kw}`")
-        keywords_block = "\n".join(kw_lines)
+        keywords_block = "\n".join(
+            format_keyword_rule(kw, raw_rule)
+            for kw, raw_rule in INCLUDE_KEYWORDS.items()
+        )
     else:
         keywords_block = "- (none)"
 
@@ -181,13 +292,81 @@ def format_config_list() -> str:
 HELP_TEXT = (
     "**Available commands:**\n"
     "- `/list` — List keywords, exclusions, and watched chats\n"
-    "- `/add <keyword> -<excl1> -<excl2>` — Add keyword with optional exclusions\n"
+    "- `/add <keyword> [-<excl>...] [ch:<chat> | @<chat>] [min:<price>] [max:<price>]` — Add or update keyword\n"
     "- `/add_exclusion <keyword>` — Add global exclusion\n"
     "- `/remove <keyword>` — Remove keyword\n"
     "- `/remove_exclusion <keyword>` — Remove global exclusion\n"
     "- `/add_chat <chat ID>` — Add watched chat (username or numeric ID)\n"
     "- `/remove_chat <chat ID>` — Remove watched chat"
 )
+
+
+def parse_price_arg(raw: str) -> float | None:
+    cleaned = raw.strip().lower().removeprefix("r$").strip()
+    if not cleaned:
+        return None
+    if "," in cleaned and "." in cleaned:
+        cleaned = cleaned.replace(".", "").replace(",", ".")
+    elif "," in cleaned:
+        cleaned = cleaned.replace(",", ".")
+    try:
+        value = float(cleaned)
+    except ValueError:
+        return None
+    return value if value >= 0 else None
+
+
+def parse_add_args(arg: str) -> tuple[str, list[str], list[str | int], float | None, float | None, str | None]:
+    """Parse /add arguments into (keyword, exclusions, channels, min_price, max_price, error)."""
+    channels: list[str | int] = []
+    min_price: float | None = None
+    max_price: float | None = None
+    remaining_tokens: list[str] = []
+
+    for token in arg.split():
+        lower = token.lower()
+        if lower.startswith("ch:"):
+            chat_ref = parse_chat_ref(token[3:])
+            if chat_ref is None:
+                return "", [], [], None, None, f"Invalid channel filter `{token}`."
+            if find_chat_entry(channels, chat_ref) is None:
+                channels.append(chat_ref)
+        elif token.startswith("@") and len(token) > 1:
+            chat_ref = parse_chat_ref(token)
+            if chat_ref is not None and find_chat_entry(channels, chat_ref) is None:
+                channels.append(chat_ref)
+        elif lower.startswith("min:"):
+            val = parse_price_arg(token[4:])
+            if val is None:
+                return "", [], [], None, None, f"Invalid min price `{token}`."
+            min_price = val
+        elif lower.startswith("max:"):
+            val = parse_price_arg(token[4:])
+            if val is None:
+                return "", [], [], None, None, f"Invalid max price `{token}`."
+            max_price = val
+        else:
+            remaining_tokens.append(token)
+
+    if min_price is not None and max_price is not None and min_price > max_price:
+        return "", [], [], None, None, "Min price cannot be greater than max price."
+
+    remaining = " ".join(remaining_tokens).strip()
+    if not remaining or remaining.startswith("-"):
+        return "", [], [], None, None, "Usage: `/add <keyword> [-<excl>...] [ch:<chat>] [min:<price>] [max:<price>]`"
+
+    segments = re.split(r"\s+-", remaining)
+    keyword = normalize_text(segments[0])
+    if not keyword:
+        return "", [], [], None, None, "Usage: `/add <keyword> [-<excl>...] [ch:<chat>] [min:<price>] [max:<price>]`"
+
+    unique_exclusions: list[str] = []
+    for raw_excl in segments[1:]:
+        excl = normalize_text(raw_excl)
+        if excl and find_case_insensitive_item(unique_exclusions, excl) is None:
+            unique_exclusions.append(excl)
+
+    return keyword, unique_exclusions, channels, min_price, max_price, None
 
 
 def handle_command(raw_text: str) -> tuple[str | None, bool]:
@@ -207,41 +386,47 @@ def handle_command(raw_text: str) -> tuple[str | None, bool]:
         return HELP_TEXT, False
 
     if cmd == "/add":
-        if not arg or arg.startswith("-"):
-            return "Usage: `/add <keyword> [-<exclusion1> -<exclusion2> ...]`", False
-        segments = re.split(r"\s+-", arg)
-        keyword = normalize_text(segments[0])
-        if not keyword:
-            return "Usage: `/add <keyword> [-<exclusion1> -<exclusion2> ...]`", False
-        exclusions = [normalize_text(s) for s in segments[1:] if normalize_text(s)]
+        if not arg:
+            return "Usage: `/add <keyword> [-<excl>...] [ch:<chat>] [min:<price>] [max:<price>]`", False
+        keyword, exclusions, channels, min_price, max_price, err = parse_add_args(arg)
+        if err:
+            return err, False
 
         existing_key = find_case_insensitive_key(INCLUDE_KEYWORDS, keyword)
         if existing_key is not None:
-            if not exclusions:
-                return f"Keyword `{existing_key}` already exists.", False
-            current = INCLUDE_KEYWORDS[existing_key]
-            added = []
+            rule = parse_keyword_rule(INCLUDE_KEYWORDS[existing_key])
+            changed = False
             for excl in exclusions:
-                if find_case_insensitive_item(current, excl) is None:
-                    current.append(excl)
-                    added.append(excl)
-            if not added:
-                return f"Keyword `{existing_key}` already has those exclusions.", False
+                if find_case_insensitive_item(rule["excludes"], excl) is None:
+                    rule["excludes"].append(excl)
+                    changed = True
+            for ch in channels:
+                if find_chat_entry(rule["channels"], ch) is None:
+                    rule["channels"].append(ch)
+                    changed = True
+            if min_price is not None and rule["min_price"] != min_price:
+                rule["min_price"] = min_price
+                changed = True
+            if max_price is not None and rule["max_price"] != max_price:
+                rule["max_price"] = max_price
+                changed = True
+            if rule["min_price"] is not None and rule["max_price"] is not None and rule["min_price"] > rule["max_price"]:
+                return "Min price cannot be greater than max price.", False
+            if not changed:
+                return f"Keyword `{existing_key}` already has those settings.", False
+            INCLUDE_KEYWORDS[existing_key] = serialize_keyword_rule(rule)
             save_config()
-            added_str = ", ".join(f"`{e}`" for e in added)
-            return f"Updated `{existing_key}` with exclusions: {added_str}", False
+            return f"Updated {format_keyword_rule(existing_key, INCLUDE_KEYWORDS[existing_key])[2:]}", False
 
-        # Deduplicate exclusions while preserving order
-        unique_exclusions: list[str] = []
-        for excl in exclusions:
-            if find_case_insensitive_item(unique_exclusions, excl) is None:
-                unique_exclusions.append(excl)
-        INCLUDE_KEYWORDS[keyword] = unique_exclusions
+        rule = {
+            "excludes": exclusions,
+            "channels": channels,
+            "min_price": min_price,
+            "max_price": max_price,
+        }
+        INCLUDE_KEYWORDS[keyword] = serialize_keyword_rule(rule)
         save_config()
-        if unique_exclusions:
-            excl_str = ", ".join(f"`{e}`" for e in unique_exclusions)
-            return f"Added keyword `{keyword}` with exclusions: {excl_str}", False
-        return f"Added keyword `{keyword}`.", False
+        return f"Added {format_keyword_rule(keyword, INCLUDE_KEYWORDS[keyword])[2:]}", False
 
     if cmd == "/add_exclusion":
         excl = normalize_text(arg)
@@ -305,11 +490,21 @@ async def on_new_message(event: events.NewMessage.Event) -> None:
         return
 
     text = event.raw_text or ""
-    ok, matched = matches_filters(text)
-    if not ok:
+    if not text:
         return
 
     chat = await event.get_chat()
+    chat_usernames = []
+    if getattr(chat, "username", None):
+        chat_usernames.append(chat.username)
+    for u in getattr(chat, "usernames", None) or []:
+        if getattr(u, "active", True) and getattr(u, "username", None):
+            chat_usernames.append(u.username)
+
+    ok, matched = matches_filters(text, chat_id=event.chat_id, chat_usernames=chat_usernames)
+    if not ok:
+        return
+
     chat_title = getattr(chat, "title", None) or getattr(chat, "username", None) or str(event.chat_id)
     msg_link = get_message_link(event, chat)
     urls = extract_urls(event)
