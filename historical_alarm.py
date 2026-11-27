@@ -163,10 +163,16 @@ def compute_token_similarity(tokens_a: Iterable[str], tokens_b: Iterable[str]) -
         return 0.0
 
     def weight(tok: str) -> float:
+        if len(tok) >= 8 and any(c.isdigit() for c in tok):
+            # Long alphanumeric SKU / part-number suffixes (e.g. ne75080019t2) shouldn't penalize matches
+            return 0.4
         if is_model_token(tok):
             return 2.5
+        if tok.isdigit() and len(tok) >= 3:
+            # Numeric model identifiers like 5080, 4070, 5600
+            return 2.5
         if tok.isdigit():
-            return 1.5
+            return 1.2
         return 1.0
 
     intersection = set_a & set_b
