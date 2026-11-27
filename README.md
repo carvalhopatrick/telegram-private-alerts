@@ -51,4 +51,11 @@ Send these commands in your configured `alert_chat_id`:
 | `/remove_exclusion <keyword>` | Remove a global exclusion |
 | `/add_chat <chat ID>` | Add a watched chat (username or numeric ID) |
 | `/remove_chat <chat ID>` | Remove a watched chat |
+| `/hist` | Show Historical Alarm status & SQLite cache stats |
+| `/hist on` / `/hist off` | Enable or disable Historical Alarm |
+| `/hist min <price>` | Set minimum price threshold for Historical Alarm |
+| `/hist percent <pct>` | Set % below historical lowest price to trigger alarm |
+| `/hist add_chat <chat ID>` | Add a chat to Historical Alarm search scope |
+| `/hist remove_chat <chat ID>` | Remove a chat from Historical Alarm search scope |
+| `/hist sync` | Sync 60-day history cache (restricted to `admin_username`) |
 | `/help` | Show available commands |
