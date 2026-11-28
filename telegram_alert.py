@@ -742,9 +742,9 @@ async def on_new_message(event: events.NewMessage.Event) -> None:
             else f"{format_price(hist_match.lowest_historical_price)} on {prev_date}"
         )
         alert_msg = (
-            f"**HISTORICAL ALARM (-{hist_match.drop_percent:.1f}%):**\n"
-            f" {hist_match.title}\n"
-            f" Now: `{format_price(hist_match.current_price)}` | "
+            f"**🚨 HISTORICAL ALARM (-{hist_match.drop_percent:.1f}%):**\n"
+            f" {hist_match.title}\n\n"
+            f"Now: `{format_price(hist_match.current_price)}` \n"
             f"Previous low ({hist_match.sample_count} deals): {prev_ref}\n\n"
             f"**SOURCE:**\n {source_line}\n\n"
             f"**TEXT:**\n {snippet}\n\n"
